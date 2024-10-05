@@ -18,6 +18,7 @@ local lang = sysutils.readlang("router")
 --//Функция отправки пакета по IP получателя
 function route(recieverip, senderip, ... )
   local cl
+  -- Используем кэш клиентов
   if not client_cache[recieverip] then
     for client in pairs(clients) do
       if recieverip:find(client) then
@@ -27,13 +28,16 @@ function route(recieverip, senderip, ... )
     end
   end
   cl = client_cache[recieverip]
+  
   if cl then
+    -- Отправляем пакет через LAN
     lan[clientscard[cl]:sub(1,3)]:directsend(clients[cl], recieverip, senderip, ...)
   else
+    -- Если не найден LAN клиент, используем WAN
     if wan then
       wan:directsend(wan.router, recieverip, senderip, ...)
     else
-      sysutils.log(lang.deliverr..": \""..recieverip.."\".",2, "router")
+      sysutils.log(lang.deliverr..": \""..recieverip.."\".", 2, "router")
     end
   end
 end
@@ -57,10 +61,16 @@ end
 function commands.getip()
   if lan[acceptedAdr:sub(1,3)] then
     local adr = ip.."."..senderAdr:sub(1,3)
-    clients[adr] = senderAdr
-    clientscard[adr] = acceptedAdr
-    lan[acceptedAdr:sub(1,3)]:directsend(senderAdr, adr, ip, "setip")
-    sysutils.log(lang.givenip..": "..adr, 1, "router")
+    
+    -- Проверяем, не занят ли адрес
+    if not clients[adr] then
+      clients[adr] = senderAdr
+      clientscard[adr] = acceptedAdr
+      lan[acceptedAdr:sub(1,3)]:directsend(senderAdr, adr, ip, "setip")
+      sysutils.log(lang.givenip..": "..adr, 1, "router")
+    else
+      sysutils.log(lang.ipalreadyassigned..": "..adr, 3, "router") -- Новое сообщение о том, что адрес уже занят
+    end
   end
 end
 
@@ -71,12 +81,13 @@ if not config.lan then
 end
 
 --//Инициализируем WAN карту
-if config.wan.type then
+if config.wan and config.wan.type then
   wan, err = rn.init(config.wan)
   if wan then
     sysutils.log(string.format("%s: \"%s\". %s: \"%s\"", lang.waninit, wan.address:sub(1, 3), lang.gateway, wan.routerip), 0, "router")
   else
     sysutils.log(lang.wanerr..": \""..err.."\"!", 3, "router")
+    return -- Завершаем выполнение, если WAN не инициализирован
   end
 else
   sysutils.log(lang.nowan, 2, "router")
